@@ -169,10 +169,8 @@ class CeleriteFactorOp : public OpKernel {
       }
       OP_REQUIRES(context, Dn > T(0.0), errors::InvalidArgument(kErrMsg));
       D(n) = Dn;
-      //W.col(n) /= Dn;
       for (int64 j = 0; j < J; ++j) W(j, n) /= Dn;
     }
-
   }
 };
 
