@@ -14,11 +14,10 @@ dirname = os.path.dirname(os.path.abspath(__file__))
 mod = tf.load_op_library(os.path.join(dirname, "celerite_op" + suffix))
 
 celerite_factor = mod.celerite_factor
-celerite_factor_grad = mod.celerite_factor_grad
 
-
-@tf.RegisterGradient("CeleriteFactor")
-def _celerite_factor_grad(op, *grads):
-    args = list(op.inputs) + list(op.outputs) + list(grads)
-    print(celerite_factor_grad(*args))
-    return celerite_factor_grad(*args)
+# celerite_factor_grad = mod.celerite_factor_grad
+# @tf.RegisterGradient("CeleriteFactor")
+# def _celerite_factor_grad(op, *grads):
+#     args = list(op.inputs) + list(op.outputs) + list(grads)
+#     print(celerite_factor_grad(*args))
+#     return celerite_factor_grad(*args)

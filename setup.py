@@ -128,7 +128,7 @@ if __name__ == "__main__":
         Extension("celeriteflow.ops.celerite_op",
                   sources=[
                       fmt_filename("celerite_factor_op.cc"),
-                      fmt_filename("celerite_factor_grad_op.cc"),
+                      # fmt_filename("celerite_factor_grad_op.cc"),
                   ],
                   language="c++"),
     ]

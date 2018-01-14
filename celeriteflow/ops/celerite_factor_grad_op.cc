@@ -223,6 +223,8 @@ class CeleriteFactorGradOp : public OpKernel {
         Wn(j) = W(j, n) * Dn;
       }
 
+
+
     }
   }
 };

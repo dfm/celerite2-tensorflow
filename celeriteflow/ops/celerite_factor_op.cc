@@ -12,39 +12,24 @@ static const char kErrMsg[] =
 
 REGISTER_OP("CeleriteFactor")
   .Attr("T: {float, double}")
-  .Input("a_real: T")
-  .Input("c_real: T")
-  .Input("a_comp: T")
-  .Input("b_comp: T")
-  .Input("c_comp: T")
-  .Input("d_comp: T")
-  .Input("x: T")
-  .Input("diag: T")
-  .Output("d_out: T")
-  .Output("phi_out: T")
-  .Output("u_out: T")
-  .Output("w_out: T")
-  .Output("s_out: T")
+  .Input("a: T")
+  .Input("u: T")
+  .Input("v: T")
+  .Input("phi: T")
+  .Output("d: T")
+  .Output("w: T")
+  .Output("s: T")
   .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
 
-    ::tensorflow::shape_inference::ShapeHandle a_real, c_real;
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &a_real));
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 1, &c_real));
-    TF_RETURN_IF_ERROR(c->Merge(a_real, c_real, &a_real));
+    ::tensorflow::shape_inference::ShapeHandle shape;
+    TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &shape));
 
-    ::tensorflow::shape_inference::ShapeHandle a_comp, b_comp, c_comp, d_comp;
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 1, &a_comp));
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 1, &b_comp));
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(4), 1, &c_comp));
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(5), 1, &d_comp));
-    TF_RETURN_IF_ERROR(c->Merge(a_comp, b_comp, &a_comp));
-    TF_RETURN_IF_ERROR(c->Merge(a_comp, c_comp, &a_comp));
-    TF_RETURN_IF_ERROR(c->Merge(a_comp, d_comp, &a_comp));
+    ::tensorflow::shape_inference::ShapeHandle u, v;
+    TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &u));
+    TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 2, &v));
+    TF_RETURN_IF_ERROR(c->Merge(u, v, &u));
 
-    ::tensorflow::shape_inference::ShapeHandle x, diag;
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(6), 1, &x));
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(7), 1, &diag));
-    TF_RETURN_IF_ERROR(c->Merge(x, diag, &x));
+    TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 2, &shape));
 
     return Status::OK();
   });
@@ -55,123 +40,69 @@ class CeleriteFactorOp : public OpKernel {
   explicit CeleriteFactorOp(OpKernelConstruction* context) : OpKernel(context) {}
 
   void Compute(OpKernelContext* context) override {
+    typedef Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, 1>> c_vector_t;
+    typedef Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> c_matrix_t;
+    typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, 1>> vector_t;
+    typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> matrix_t;
 
-    const Tensor& a_real_tensor = context->input(0);
-    const Tensor& c_real_tensor = context->input(1);
-    const Tensor& a_comp_tensor = context->input(2);
-    const Tensor& b_comp_tensor = context->input(3);
-    const Tensor& c_comp_tensor = context->input(4);
-    const Tensor& d_comp_tensor = context->input(5);
-    const Tensor& x_tensor = context->input(6);
-    const Tensor& diag_tensor = context->input(7);
+    // Extract the diagonal
+    const Tensor& A_t = context->input(0);
+    OP_REQUIRES(context, A_t.dims() == 1, errors::InvalidArgument("'a' should be a vector"));
+    int64 N = A_t.dim_size(0);
+    const auto A = c_vector_t(A_t.template flat<T>().data(), A_t.dim_size(0));
 
-    auto a_real = a_real_tensor.template flat<T>();
-    auto c_real = c_real_tensor.template flat<T>();
-    auto a_comp = a_comp_tensor.template flat<T>();
-    auto b_comp = b_comp_tensor.template flat<T>();
-    auto c_comp = c_comp_tensor.template flat<T>();
-    auto d_comp = d_comp_tensor.template flat<T>();
-    auto x = x_tensor.template flat<T>();
-    auto diag = diag_tensor.template flat<T>();
+    // Get U & V
+    const Tensor& U_t = context->input(1);
+    OP_REQUIRES(context, U_t.dims() == 2, errors::InvalidArgument("'U' should be a matrix"));
+    OP_REQUIRES(context, U_t.dim_size(0) == N, errors::InvalidArgument("'U' should have 'N' rows"));
+    int64 J = U_t.dim_size(1);
+    const auto U = c_matrix_t(U_t.template flat<T>().data(), U_t.dim_size(0), U_t.dim_size(1));
 
-    auto J_real = a_real_tensor.NumElements(),
-         J_comp = a_comp_tensor.NumElements(),
-         J = J_real + 2 * J_comp,
-         N = x_tensor.NumElements();
+    const Tensor& V_t = context->input(2);
+    OP_REQUIRES(context, V_t.dims() == 2, errors::InvalidArgument("'V' should be a matrix"));
+    OP_REQUIRES(context, ((V_t.dim_size(0) == N) & (V_t.dim_size(1) == J)),
+        errors::InvalidArgument("'V' should have the shape '(N, J)'"));
+    const auto V = c_matrix_t(V_t.template flat<T>().data(), V_t.dim_size(0), V_t.dim_size(1));
 
-    // Create the output tensors
-    Tensor* D_tensor = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &D_tensor));
-    Tensor* phi_tensor = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({N-1, J}), &phi_tensor));
-    Tensor* U_tensor = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({N-1, J}), &U_tensor));
-    Tensor* W_tensor = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(3, TensorShape({N, J}), &W_tensor));
-    Tensor* S_tensor = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(4, TensorShape({J, J}), &S_tensor));
+    // And phi
+    const Tensor& phi_t = context->input(3);
+    OP_REQUIRES(context, phi_t.dims() == 2, errors::InvalidArgument("'phi' should be a matrix"));
+    OP_REQUIRES(context, ((phi_t.dim_size(0) == N-1) & (phi_t.dim_size(1) == J)),
+        errors::InvalidArgument("'phi' should have the shape '(N-1, J)'"));
+    const auto phi = c_matrix_t(phi_t.template flat<T>().data(), phi_t.dim_size(0), phi_t.dim_size(1));
 
-    auto D = D_tensor->template flat<T>();
-    auto phi = phi_tensor->template matrix<T>();
-    auto U = U_tensor->template matrix<T>();
-    auto W = W_tensor->template matrix<T>();
-    auto S = S_tensor->template matrix<T>();
+    // Create the outputs
+    Tensor* D_t = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &D_t));
+    auto D = vector_t(D_t->template flat<T>().data(), N);
+
+    Tensor* W_t = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({N, J}), &W_t));
+    auto W = matrix_t(W_t->template flat<T>().data(), N, J);
+
+    Tensor* S_t = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({J, J}), &S_t));
+    auto S = matrix_t(S_t->template flat<T>().data(), J, J);
+
+    // First row
     S.setZero();
+    D(0) = A(0);
+    W.row(0) = V.row(0) / D(0);
 
-    T a_sum = T(0);
-    for (int64 j = 0; j < J_real; ++j) a_sum += a_real(j);
-    for (int64 j = 0; j < J_comp; ++j) a_sum += a_comp(j);
-
-    // Set the diagonal
-    for (int64 n = 0; n < N; ++n) D(n) = diag(n) + a_sum;
-    auto Dn = D(0);
-
-    // Special case for jitter only.
-    if (J == 0) return;
-
-    // Compute the values at x[0]
-    {
-      T value = 1.0 / Dn,
-        t = x(0);
-      for (int j = 0; j < J_real; ++j) {
-        W(j, 0) = value;
-      }
-      for (int j = 0, k = J_real; j < J_comp; ++j, k += 2) {
-        T d = d_comp(j) * t;
-        W(k,   0) = cos(d)*value;
-        W(k+1, 0) = sin(d)*value;
-      }
-    }
-
-    // Start the main loop
+    // The rest of the rows
     for (int64 n = 1; n < N; ++n) {
-      T t = x(n),
-        dx = t - x(n-1);
-      for (int64 j = 0; j < J_real; ++j) {
-        phi(j, n-1) = exp(-c_real(j)*dx);
-        U(j, n-1) = a_real(j);
-        W(j, n) = T(1.0);
-      }
-      for (int64 j = 0, k = J_real; j < J_comp; ++j, k += 2) {
-        T a = a_comp(j),
-          b = b_comp(j),
-          d = d_comp(j) * t,
-          cd = cos(d),
-          sd = sin(d);
-        T value = exp(-c_comp(j)*dx);
-        phi(k,   n-1) = value;
-        phi(k+1, n-1) = value;
-        U(k,   n-1) = a*cd + b*sd;
-        U(k+1, n-1) = a*sd - b*cd;
-        W(k,   n) = cd;
-        W(k+1, n) = sd;
-      }
+      // Update S = diag(phi) * (S + D*W*W.T) * diag(phi)
+      S.noalias() += D(n-1) * W.row(n-1).transpose() * W.row(n-1);
+      S.array() *= (phi.row(n-1).transpose() * phi.row(n-1)).array();
 
-      for (int64 j = 0; j < J; ++j) {
-        T phij = phi(j, n-1),
-          xj = Dn*W(j, n-1);
-        for (int64 k = 0; k <= j; ++k) {
-          S(k, j) = phij*(phi(k, n-1)*(S(k, j) + xj*W(k, n-1)));
-        }
-      }
+      // Update D = A - U * S * U.T
+      W.row(n) = U.row(n) * S;
+      D(n) = A(n) - W.row(n) * U.row(n).transpose();
+      OP_REQUIRES(context, D(n) > T(0.0), errors::InvalidArgument(kErrMsg));
 
-      Dn = D(n);
-      for (int64 j = 0; j < J; ++j) {
-        T uj = U(j, n-1),
-          xj = W(j, n);
-        for (int64 k = 0; k < j; ++k) {
-          T tmp = U(k, n-1) * S(k, j);
-          Dn -= 2.0*(uj*tmp);
-          xj -= tmp;
-          W(k, n) -= uj*S(k, j);
-        }
-        T tmp = uj*S(j, j);
-        Dn -= uj*tmp;
-        W(j, n) = xj - tmp;
-      }
-      OP_REQUIRES(context, Dn > T(0.0), errors::InvalidArgument(kErrMsg));
-      D(n) = Dn;
-      for (int64 j = 0; j < J; ++j) W(j, n) /= Dn;
+      // Update W = (V - U * S) / D
+      W.row(n).noalias() -= V.row(n);
+      W.row(n) /= -D(n);
     }
   }
 };
