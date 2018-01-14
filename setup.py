@@ -80,7 +80,7 @@ class build_ext(_build_ext):
         flags = ["-stdlib=libc++", "-funroll-loops",
                  "-Wno-unused-function", "-Wno-uninitialized",
                  "-Wno-unused-local-typedefs"]
-        libraries = ["m", "c++", "tensorflow_framework"]
+        libraries = ["m", "c++"]
 
         for ext in self.extensions:
             ext.library_dirs += [tf.sysconfig.get_lib()]
@@ -123,9 +123,13 @@ if __name__ == "__main__":
         os.system("python setup.py sdist upload")
         sys.exit()
 
+    fmt_filename = lambda fn: os.path.join("celeriteflow", "ops", fn)
     extensions = [
-        Extension("celeriteflow.ops.celerite_factor_op",
-                  sources=[os.path.join("celeriteflow", "ops", "celerite_factor_op.cc")],
+        Extension("celeriteflow.ops.celerite_op",
+                  sources=[
+                      fmt_filename("celerite_factor_op.cc"),
+                      fmt_filename("celerite_factor_grad_op.cc"),
+                  ],
                   language="c++"),
     ]
 

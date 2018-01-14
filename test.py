@@ -1,5 +1,5 @@
 import tensorflow as tf
-celerite_module = tf.load_op_library('./celerite_op.so')
+from celeriteflow.ops import celerite_factor
 
 N = 100
 
@@ -12,9 +12,11 @@ d_comp = tf.ones(0)
 x = tf.linspace(0.0, 10.0, N)
 diag = tf.ones(N)
 
-factor = celerite_module.celerite_factor(
+factor = celerite_factor(
     a_real, c_real, a_comp, b_comp, c_comp, d_comp, x, diag
 )
 
+grad = tf.gradients(factor, a_real)
+
 with tf.Session() as sess:
-    print(sess.run(factor))
+    print(sess.run(grad))

@@ -24,6 +24,7 @@ REGISTER_OP("CeleriteFactor")
   .Output("phi_out: T")
   .Output("u_out: T")
   .Output("w_out: T")
+  .Output("s_out: T")
   .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
 
     ::tensorflow::shape_inference::ShapeHandle a_real, c_real;
@@ -80,18 +81,22 @@ class CeleriteFactorOp : public OpKernel {
 
     // Create the output tensors
     Tensor* D_tensor = NULL;
-    Tensor* phi_tensor = NULL;
-    Tensor* U_tensor = NULL;
-    Tensor* W_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &D_tensor));
+    Tensor* phi_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({N-1, J}), &phi_tensor));
+    Tensor* U_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({N-1, J}), &U_tensor));
+    Tensor* W_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(3, TensorShape({N, J}), &W_tensor));
+    Tensor* S_tensor = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(4, TensorShape({J, J}), &S_tensor));
 
     auto D = D_tensor->template flat<T>();
     auto phi = phi_tensor->template matrix<T>();
     auto U = U_tensor->template matrix<T>();
     auto W = W_tensor->template matrix<T>();
+    auto S = S_tensor->template matrix<T>();
+    S.setZero();
 
     T a_sum = T(0);
     for (int64 j = 0; j < J_real; ++j) a_sum += a_real(j);
@@ -119,9 +124,6 @@ class CeleriteFactorOp : public OpKernel {
     }
 
     // Start the main loop
-    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> S(J, J);
-    S.setZero();
-
     for (int64 n = 1; n < N; ++n) {
       T t = x(n),
         dx = t - x(n-1);
