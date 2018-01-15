@@ -9,7 +9,7 @@ J_comp = 3
 np.random.seed(42)
 
 x = tf.convert_to_tensor(np.sort(np.random.uniform(0, 10, N)), dtype=tf.float32)
-y = tf.convert_to_tensor(np.random.randn(N), dtype=tf.float32)
+y = tf.convert_to_tensor(np.random.randn(N, 4), dtype=tf.float32)
 diag = tf.convert_to_tensor(np.random.uniform(0.5, 1.5, N), dtype=tf.float32)
 
 a_real = tf.convert_to_tensor(np.random.rand(J_real), dtype=tf.float32)

@@ -106,7 +106,7 @@ class CeleriteSolveOp : public OpKernel {
       Z.row(n).noalias() -= U.row(n) * f;
     }
 
-    Z.array() /= D.array();
+    Z.array().colwise() /= D.array();
 
     for (int64 n = N-2; n >= 0; --n) {
       g.noalias() += U.row(n+1).transpose() * Z.row(n+1);

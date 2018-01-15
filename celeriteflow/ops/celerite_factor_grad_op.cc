@@ -121,22 +121,18 @@ class CeleriteFactorGradOp : public OpKernel {
     Tensor* bA_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &bA_t));
     auto bA = vector_t(bA_t->template flat<T>().data(), N);
-    bA.setZero();
 
     Tensor* bU_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({N, J}), &bU_t));
     auto bU = matrix_t(bU_t->template flat<T>().data(), N, J);
-    bU.setZero();
 
     Tensor* bV_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({N, J}), &bV_t));
     auto bV = matrix_t(bV_t->template flat<T>().data(), N, J);
-    bV.setZero();
 
     Tensor* bP_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(3, TensorShape({N-1, J}), &bP_t));
     auto bP = matrix_t(bP_t->template flat<T>().data(), N-1, J);
-    bP.setZero();
 
     // Make local copies of the gradients that we need.
     T bD_ = bD(N-1);
@@ -146,13 +142,13 @@ class CeleriteFactorGradOp : public OpKernel {
     for (int64 n = N-1; n > 0; --n) {
       // Step 6
       bD_ -= W.row(n) * bW_.transpose();
-      bV.row(n).noalias() += bW_;
-      bU.row(n).noalias() -= bW_ * S;
+      bV.row(n).noalias() = bW_;
+      bU.row(n).noalias() = -bW_ * S_;
       bS_.noalias() -= U.row(n).transpose() * bW_;
 
       // Step 5
-      bA(n) += bD_;
-      bU.row(n) -= 2.0 * bD_ * U.row(n) * S;
+      bA(n) = bD_;
+      bU.row(n).noalias() -= 2.0 * bD_ * U.row(n) * S_;
       bS_.noalias() -= bD_ * U.row(n).transpose() * U.row(n);
 
       // Step 4
@@ -170,7 +166,8 @@ class CeleriteFactorGradOp : public OpKernel {
     }
 
     // Finally update the first row.
-    bV.row(0).noalias() += bW_;
+    bU.row(0).setZero();
+    bV.row(0).noalias() = bW_;
     bD_ -= bW_ * W.row(0).transpose();
     bA(0) = bD_;
 

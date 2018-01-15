@@ -3,3 +3,4 @@ build
 var
 .DS_Store
 __pycache__
+*.egg-info
