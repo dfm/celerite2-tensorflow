@@ -56,8 +56,8 @@ def cpp_flag(compiler):
 
 class build_ext(_build_ext):
     c_opts = {
-        "msvc": ["/EHsc", "/DNODEBUG"],
-        "unix": ["-DNODEBUG"],
+        "msvc": ["/EHsc"],
+        # "unix": ["-UNDEBUG"],
     }
 
     def build_extensions(self):
@@ -130,6 +130,7 @@ if __name__ == "__main__":
                       fmt_filename("celerite_factor_op.cc"),
                       fmt_filename("celerite_factor_grad_op.cc"),
                       fmt_filename("celerite_solve_op.cc"),
+                      fmt_filename("celerite_solve_grad_op.cc"),
                   ],
                   language="c++"),
     ]

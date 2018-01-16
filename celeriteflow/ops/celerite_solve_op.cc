@@ -25,6 +25,7 @@ REGISTER_OP("CeleriteSolve")
     TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &p));
     TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 1, &d));
     TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 2, &w));
+    TF_RETURN_IF_ERROR(c->WithRank(c->input(4), 2, &y));
     TF_RETURN_IF_ERROR(c->Merge(u, w, &u));
 
     c->set_output(0, c->input(4));
@@ -70,23 +71,15 @@ class CeleriteSolveOp : public OpKernel {
     const auto W = c_matrix_t(W_t.template flat<T>().data(), N, J);
 
     const Tensor& Y_t = context->input(4);
-    OP_REQUIRES(context, (((Y_t.dims() == 1) || (Y_t.dims() == 2)) &&
+    OP_REQUIRES(context, ((Y_t.dims() == 2) &&
                           (Y_t.dim_size(0) == N)),
-        errors::InvalidArgument("Y should have the shape (N) or (N, Nrhs)"));
-    bool is_oned = true;
-    int64 Nrhs = 1;
-    if (Y_t.dims() == 2) {
-      Nrhs = Y_t.dim_size(1);
-      is_oned = false;
-    }
+        errors::InvalidArgument("Y should have the shape (N, Nrhs)"));
+    int64 Nrhs = Y_t.dim_size(1);
     const auto Y = c_matrix_t(Y_t.template flat<T>().data(), N, Nrhs);
 
     // Create the outputs
     Tensor* Z_t = NULL;
-    if (is_oned)
-      OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &Z_t));
-    else
-      OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N, Nrhs}), &Z_t));
+    OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N, Nrhs}), &Z_t));
     auto Z = matrix_t(Z_t->template flat<T>().data(), N, Nrhs);
 
     Tensor* f_t = NULL;

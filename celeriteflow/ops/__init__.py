@@ -23,6 +23,12 @@ def _celerite_factor_grad(op, *grads):
     return mod.celerite_factor_grad(*args)
 
 
+@tf.RegisterGradient("CeleriteSolve")
+def _celerite_solve_grad(op, *grads):
+    args = op.inputs[:-1] + list(op.outputs) + list(grads)
+    return mod.celerite_solve_grad(*args)
+
+
 def get_celerite_matrices(a_real, c_real, a_comp, b_comp, c_comp, d_comp,
                           x, diag):
     A = diag + tf.reduce_sum(a_real) + tf.reduce_sum(a_comp)

@@ -15,13 +15,13 @@ from celeriteflow import ops
 
 class TestFactor(tf.test.TestCase):
 
-    def test_factor(self, dtype=tf.float64, N=100, Nrhs=5, J_real=2, J_comp=1,
-                    seed=42):
+    def test_factor(self, dtype=tf.float64, N=100, Nrhs=1, J_real=2, J_comp=1,
+                    seed=123):
         np.random.seed(seed)
 
         x = np.sort(np.random.uniform(0, 10, N))
         y = np.random.randn(N, Nrhs)
-        diag = np.random.uniform(5, 8, N)
+        diag = np.random.uniform(10, 45, N)
 
         kernel = terms.Term()
         for j in range(J_real):
@@ -47,6 +47,7 @@ class TestFactor(tf.test.TestCase):
         c_comp = tf.convert_to_tensor(c_c, dtype=dtype)
         d_comp = tf.convert_to_tensor(d_c, dtype=dtype)
         x_t = tf.convert_to_tensor(x, dtype=dtype)
+        y_t = tf.convert_to_tensor(y, dtype=dtype)
         diag_t = tf.convert_to_tensor(diag, dtype=dtype)
 
         A, U, V, P = ops.get_celerite_matrices(
@@ -57,7 +58,8 @@ class TestFactor(tf.test.TestCase):
         shapes = [tuple(map(int, g.shape)) for g in grads]
 
         log_det = tf.reduce_sum(tf.log(D))
-        alpha, _, _ = ops.celerite_solve(U, P, D, W, y)
+        alpha, f, g = ops.celerite_solve(U, P, D, W, y_t)
+        dotsolve = tf.matmul(alpha, alpha, transpose_a=True)
 
         with self.test_session() as session:
             A_r, U_r, V_r, P_r = session.run([A, U, V, P])
@@ -69,13 +71,16 @@ class TestFactor(tf.test.TestCase):
             # Test some gradients
             self.assertAllCloseAccordingToType(
                 tf.test.compute_gradient_error(
-                    grads, shapes, log_det, (1,), inits, 1e-5), 0.0)
+                    grads, shapes, D, (N,), inits, 1e-8), 0.0)
             self.assertAllCloseAccordingToType(
                 tf.test.compute_gradient_error(
-                    grads, shapes, D, (N,), inits, 1e-5), 0.0)
+                    grads, shapes, log_det, (1,), inits, 1e-6), 0.0)
             self.assertAllCloseAccordingToType(
                 tf.test.compute_gradient_error(
                     grads, shapes, W, (N, J_real+2*J_comp), inits, 1e-5), 0.0)
+            self.assertAllCloseAccordingToType(
+                tf.test.compute_gradient_error(
+                    grads, shapes, dotsolve, (Nrhs, Nrhs), inits, 1e-6), 0.0)
 
         # Test the determinant
         self.assertAllCloseAccordingToType(
