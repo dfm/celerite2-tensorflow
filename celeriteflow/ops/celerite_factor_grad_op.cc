@@ -5,6 +5,8 @@
 
 #include <Eigen/Core>
 
+#include "celerite.h"
+
 using namespace tensorflow;
 
 REGISTER_OP("CeleriteFactorGrad")
@@ -134,42 +136,7 @@ class CeleriteFactorGradOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(3, TensorShape({N-1, J}), &bP_t));
     auto bP = matrix_t(bP_t->template flat<T>().data(), N-1, J);
 
-    // Make local copies of the gradients that we need.
-    T bD_ = bD(N-1);
-    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> bS_ = bS, S_ = S;
-    Eigen::Matrix<T, 1, Eigen::Dynamic, Eigen::RowMajor> bW_ = bW.row(N-1) / D(N-1);
-
-    for (int64 n = N-1; n > 0; --n) {
-      // Step 6
-      bD_ -= W.row(n) * bW_.transpose();
-      bV.row(n).noalias() = bW_;
-      bU.row(n).noalias() = -bW_ * S_;
-      bS_.noalias() -= U.row(n).transpose() * bW_;
-
-      // Step 5
-      bA(n) = bD_;
-      bU.row(n).noalias() -= 2.0 * bD_ * U.row(n) * S_;
-      bS_.noalias() -= bD_ * U.row(n).transpose() * U.row(n);
-
-      // Step 4
-      S_ *= P.row(n-1).asDiagonal().inverse();
-      bP.row(n-1).noalias() = (bS_ * S_ + S_.transpose() * bS_).diagonal();
-
-      // Step 3
-      bS_ = P.row(n-1).asDiagonal() * bS_ * P.row(n-1).asDiagonal();
-      bD_ = bD(n-1) + W.row(n-1) * bS_ * W.row(n-1).transpose();
-      bW_ = bW.row(n-1) / D(n-1) + W.row(n-1) * (bS_ + bS_.transpose());
-
-      // Downdate S
-      S_ = P.row(n-1).asDiagonal().inverse() * S_;
-      S_.noalias() -= D(n-1) * W.row(n-1).transpose() * W.row(n-1);
-    }
-
-    // Finally update the first row.
-    bU.row(0).setZero();
-    bV.row(0).noalias() = bW_;
-    bD_ -= bW_ * W.row(0).transpose();
-    bA(0) = bD_;
+    celerite::factor_grad(U, P, D, W, S, bD, bW, bS, bA, bU, bV, bP);
 
   }
 };

@@ -5,6 +5,8 @@
 
 #include <Eigen/Core>
 
+#include "celerite.h"
+
 using namespace tensorflow;
 
 REGISTER_OP("CeleriteSolveGrad")
@@ -129,12 +131,10 @@ class CeleriteSolveGradOp : public OpKernel {
     Tensor* bU_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N, J}), &bU_t));
     auto bU = matrix_t(bU_t->template flat<T>().data(), N, J);
-    //bU.setZero();
 
     Tensor* bP_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({N-1, J}), &bP_t));
     auto bP = matrix_t(bP_t->template flat<T>().data(), N-1, J);
-    //bP.setZero();
 
     Tensor* bD_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({N}), &bD_t));
@@ -143,68 +143,12 @@ class CeleriteSolveGradOp : public OpKernel {
     Tensor* bW_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(3, TensorShape({N, J}), &bW_t));
     auto bW = matrix_t(bW_t->template flat<T>().data(), N, J);
-    //bW.setZero();
 
     Tensor* bY_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(4, TensorShape({N, Nrhs}), &bY_t));
     auto bY = matrix_t(bY_t->template flat<T>().data(), N, Nrhs);
 
-    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      bf_ = bf, f_ = f, bg_ = bg, g_ = g, Z_ = Z;
-
-    bY = bZ;
-    bU.row(0).setZero();
-
-    for (int64 n = 0; n <= N-2; ++n) {
-      // Grad of: Z.row(n).noalias() -= W.row(n) * g;
-      bW.row(n).noalias() = -bY.row(n) * g_.transpose();
-      bg_ -= W.row(n).transpose() * bY.row(n);
-
-      // Inverse of: Z.row(n).noalias() -= W.row(n) * g;
-      Z_.row(n).noalias() += W.row(n) * g_;
-
-      // Inverse of: g = P.row(n).asDiagonal() * g;
-      g_ = P.row(n).asDiagonal().inverse() * g_;
-
-      // Grad of: g = P.row(n).asDiagonal() * g;
-      bP.row(n).noalias() = (bg_ * g_.transpose()).diagonal();
-      bg_ = P.row(n).asDiagonal() * bg_;
-
-      // Inverse of: g.noalias() += U.row(n+1).transpose() * Z.row(n+1);
-      g_.noalias() -= U.row(n+1).transpose() * Z_.row(n+1);
-
-      // Grad of: g.noalias() += U.row(n+1).transpose() * Z.row(n+1);
-      bU.row(n+1).noalias() = Z_.row(n+1) * bg_.transpose();
-      bY.row(n+1).noalias() += U.row(n+1) * bg_;
-    }
-
-    bW.row(N-1).setZero();
-
-    bY.array().colwise() /= D.array();
-    bD = -(Z_.array() * bY.array()).rowwise().sum();
-
-    // Inverse of: Z.array().colwise() /= D.array();
-    Z_.array().colwise() *= D.array();
-
-    for (int64 n = N-1; n >= 1; --n) {
-      // Grad of: Z.row(n).noalias() -= U.row(n) * f;
-      bU.row(n).noalias() -= bY.row(n) * f_.transpose();
-      bf_ -= U.row(n).transpose() * bY.row(n);
-
-      // Inverse of: f = P.row(n-1).asDiagonal() * f;
-      f_ = P.row(n-1).asDiagonal().inverse() * f_;
-
-      // Grad of: f = P.row(n-1).asDiagonal() * f;
-      bP.row(n-1).noalias() += (bf_ * f_.transpose()).diagonal();
-      bf_ = P.row(n-1).asDiagonal() * bf_;
-
-      // Inverse of: f.noalias() += W.row(n-1).transpose() * Z.row(n-1);
-      f_.noalias() -= W.row(n-1).transpose() * Z_.row(n-1);
-
-      // Grad of: f.noalias() += W.row(n-1).transpose() * Z.row(n-1);
-      bW.row(n-1).noalias() += Z_.row(n-1) * bf_.transpose();
-      bY.row(n-1).noalias() += W.row(n-1) * bf_;
-    }
+    celerite::solve_grad(U, P, D, W, Z, f, g, bZ, bf, bg, bU, bP, bD, bW, bY);
 
   }
 };

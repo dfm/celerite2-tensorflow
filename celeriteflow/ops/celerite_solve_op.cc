@@ -5,6 +5,8 @@
 
 #include <Eigen/Core>
 
+#include "celerite.h"
+
 using namespace tensorflow;
 
 REGISTER_OP("CeleriteSolve")
@@ -85,27 +87,13 @@ class CeleriteSolveOp : public OpKernel {
     Tensor* f_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({J, Nrhs}), &f_t));
     auto f = matrix_t(f_t->template flat<T>().data(), J, Nrhs);
-    f.setZero();
 
     Tensor* g_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({J, Nrhs}), &g_t));
     auto g = matrix_t(g_t->template flat<T>().data(), J, Nrhs);
-    g.setZero();
 
     Z = Y;
-    for (int64 n = 1; n < N; ++n) {
-      f.noalias() += W.row(n-1).transpose() * Z.row(n-1);
-      f = P.row(n-1).asDiagonal() * f;
-      Z.row(n).noalias() -= U.row(n) * f;
-    }
-
-    Z.array().colwise() /= D.array();
-
-    for (int64 n = N-2; n >= 0; --n) {
-      g.noalias() += U.row(n+1).transpose() * Z.row(n+1);
-      g = P.row(n).asDiagonal() * g;
-      Z.row(n).noalias() -= W.row(n) * g;
-    }
+    celerite::solve(U, P, D, W, Z, f, g);
 
   }
 };

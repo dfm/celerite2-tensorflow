@@ -5,6 +5,8 @@
 
 #include <Eigen/Core>
 
+#include "celerite.h"
+
 using namespace tensorflow;
 
 static const char kErrMsg[] =
@@ -86,26 +88,11 @@ class CeleriteFactorOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({J, J}), &S_t));
     auto S = matrix_t(S_t->template flat<T>().data(), J, J);
 
-    // First row
-    S.setZero();
-    D(0) = A(0);
-    W.row(0) = V.row(0) / D(0);
+    D = A;
+    W = V;
 
-    // The rest of the rows
-    for (int64 n = 1; n < N; ++n) {
-      // Update S = diag(P) * (S + D*W*W.T) * diag(P)
-      S.noalias() += D(n-1) * W.row(n-1).transpose() * W.row(n-1);
-      S.array() *= (P.row(n-1).transpose() * P.row(n-1)).array();
-
-      // Update D = A - U * S * U.T
-      W.row(n) = U.row(n) * S;
-      D(n) = A(n) - W.row(n) * U.row(n).transpose();
-      OP_REQUIRES(context, D(n) > T(0.0), errors::InvalidArgument(kErrMsg));
-
-      // Update W = (V - U * S) / D
-      W.row(n).noalias() -= V.row(n);
-      W.row(n) /= -D(n);
-    }
+    int flag = celerite::factor(U, P, D, W, S);
+    OP_REQUIRES(context, flag == 0, errors::InvalidArgument(kErrMsg));
   }
 };
 

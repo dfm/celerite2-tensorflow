@@ -65,6 +65,7 @@ class build_ext(_build_ext):
         include_dirs = [tf.sysconfig.get_include()]
         include_dirs.append(os.path.join(
             include_dirs[0], "external/nsync/public"))
+        include_dirs.append(os.path.join("celeriteflow", "ops"))
 
         for ext in self.extensions:
             ext.include_dirs = include_dirs + ext.include_dirs
