@@ -23,9 +23,9 @@ REGISTER_OP("CeleriteFactorGrad")
   .Output("bu: T")
   .Output("bv: T")
   .Output("bp: T")
-  .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
+  .SetShapeFn([](shape_inference::InferenceContext* c) {
 
-    ::tensorflow::shape_inference::ShapeHandle u, p, d, w, s, bd, bw, bs;
+    shape_inference::ShapeHandle u, p, d, w, s, bd, bw, bs;
 
     TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &u));
     TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &p));
@@ -60,84 +60,78 @@ class CeleriteFactorGradOp : public OpKernel {
     typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, 1>> vector_t;
     typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> matrix_t;
 
-    // U
     const Tensor& U_t = context->input(0);
     OP_REQUIRES(context, U_t.dims() == 2, errors::InvalidArgument("U should be a matrix"));
     int64 N = U_t.dim_size(0),
           J = U_t.dim_size(1);
-    const auto U = c_matrix_t(U_t.template flat<T>().data(), N, J);
 
-    // P
     const Tensor& P_t = context->input(1);
     OP_REQUIRES(context, ((P_t.dims() == 2) &&
                           (P_t.dim_size(0) == N-1) &&
                           (P_t.dim_size(1) == J)),
           errors::InvalidArgument("P should have shape (N-1, J)"));
-    const auto P = c_matrix_t(P_t.template flat<T>().data(), N-1, J);
 
-    // D
-    const Tensor& D_t = context->input(2);
-    OP_REQUIRES(context, ((D_t.dims() == 1) && (D_t.dim_size(0) == N)),
-        errors::InvalidArgument("D should have shape (N)"));
-    const auto D = c_vector_t(D_t.template flat<T>().data(), N);
+    const Tensor& d_t = context->input(2);
+    OP_REQUIRES(context, ((d_t.dims() == 1) && (d_t.dim_size(0) == N)),
+        errors::InvalidArgument("d should have shape (N)"));
 
-    // W
     const Tensor& W_t = context->input(3);
     OP_REQUIRES(context, ((W_t.dims() == 2) &&
                           (W_t.dim_size(0) == N) &&
                           (W_t.dim_size(1) == J)),
           errors::InvalidArgument("W should have shape (N, J)"));
-    const auto W = c_matrix_t(W_t.template flat<T>().data(), N, J);
 
-    // S
     const Tensor& S_t = context->input(4);
     OP_REQUIRES(context, ((S_t.dims() == 2) &&
                           (S_t.dim_size(0) == J) &&
                           (S_t.dim_size(1) == J)),
           errors::InvalidArgument("S should have shape (J, J)"));
-    const auto S = c_matrix_t(S_t.template flat<T>().data(), J, J);
 
-    // bD
-    const Tensor& bD_t = context->input(5);
-    OP_REQUIRES(context, ((bD_t.dims() == 1) && (bD_t.dim_size(0) == N)),
-        errors::InvalidArgument("bD should have shape (N)"));
-    const auto bD = c_vector_t(bD_t.template flat<T>().data(), N);
+    const Tensor& bd_t = context->input(5);
+    OP_REQUIRES(context, ((bd_t.dims() == 1) && (bd_t.dim_size(0) == N)),
+        errors::InvalidArgument("bd should have shape (N)"));
 
-    // bW
     const Tensor& bW_t = context->input(6);
     OP_REQUIRES(context, ((bW_t.dims() == 2) &&
                           (bW_t.dim_size(0) == N) &&
                           (bW_t.dim_size(1) == J)),
           errors::InvalidArgument("bW should have shape (N, J)"));
-    const auto bW = c_matrix_t(bW_t.template flat<T>().data(), N, J);
 
-    // bS
     const Tensor& bS_t = context->input(7);
     OP_REQUIRES(context, ((bS_t.dims() == 2) &&
                           (bS_t.dim_size(0) == J) &&
                           (bS_t.dim_size(1) == J)),
           errors::InvalidArgument("bS should have shape (J, J)"));
+
+    const auto U = c_matrix_t(U_t.template flat<T>().data(), N, J);
+    const auto P = c_matrix_t(P_t.template flat<T>().data(), N-1, J);
+    const auto d = c_vector_t(d_t.template flat<T>().data(), N);
+    const auto W = c_matrix_t(W_t.template flat<T>().data(), N, J);
+    const auto S = c_matrix_t(S_t.template flat<T>().data(), J, J);
+    const auto bd = c_vector_t(bd_t.template flat<T>().data(), N);
+    const auto bW = c_matrix_t(bW_t.template flat<T>().data(), N, J);
     const auto bS = c_matrix_t(bS_t.template flat<T>().data(), J, J);
 
     // Create the outputs
-    Tensor* bA_t = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &bA_t));
-    auto bA = vector_t(bA_t->template flat<T>().data(), N);
-
+    Tensor* ba_t = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &ba_t));
     Tensor* bU_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({N, J}), &bU_t));
-    auto bU = matrix_t(bU_t->template flat<T>().data(), N, J);
-
     Tensor* bV_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({N, J}), &bV_t));
-    auto bV = matrix_t(bV_t->template flat<T>().data(), N, J);
-
     Tensor* bP_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(3, TensorShape({N-1, J}), &bP_t));
+
+    auto ba = vector_t(ba_t->template flat<T>().data(), N);
+    auto bU = matrix_t(bU_t->template flat<T>().data(), N, J);
+    auto bV = matrix_t(bV_t->template flat<T>().data(), N, J);
     auto bP = matrix_t(bP_t->template flat<T>().data(), N-1, J);
 
-    celerite::factor_grad(U, P, D, W, S, bD, bW, bS, bA, bU, bV, bP);
-
+    bU.setZero();
+    bP.setZero();
+    ba = bd;
+    bV = bW;
+    celerite::factor_grad(U, P, d, W, S, bS, bU, bP, ba, bV);
   }
 };
 

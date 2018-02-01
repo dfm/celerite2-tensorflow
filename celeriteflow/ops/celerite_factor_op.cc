@@ -10,7 +10,7 @@
 using namespace tensorflow;
 
 static const char kErrMsg[] =
-    "Cholesky decomposition was not successful. The input might not be valid.";
+    "Cholesky decomposition failed";
 
 REGISTER_OP("CeleriteFactor")
   .Attr("T: {float, double}")
@@ -21,9 +21,9 @@ REGISTER_OP("CeleriteFactor")
   .Output("d: T")
   .Output("w: T")
   .Output("s: T")
-  .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
+  .SetShapeFn([](shape_inference::InferenceContext* c) {
 
-    ::tensorflow::shape_inference::ShapeHandle a, u, v, p;
+    shape_inference::ShapeHandle a, u, v, p, J;
 
     TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &a));
     TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &u));
@@ -31,9 +31,13 @@ REGISTER_OP("CeleriteFactor")
     TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 2, &p));
     TF_RETURN_IF_ERROR(c->Merge(u, v, &u));
 
+    // Compute the JxJ shape for S
+    TF_RETURN_IF_ERROR(c->Subshape(u, 1, &J));
+    TF_RETURN_IF_ERROR(c->Concatenate(J, J, &J));
+
     c->set_output(0, c->input(0));
     c->set_output(1, c->input(1));
-    // TODO: inform S shape (J, J)
+    c->set_output(2, J);
 
     return Status::OK();
   });
@@ -48,57 +52,60 @@ class CeleriteFactorOp : public OpKernel {
     typedef Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> c_matrix_t;
     typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, 1>> vector_t;
     typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> matrix_t;
-
-    const Tensor& A_t = context->input(0);
-    OP_REQUIRES(context, A_t.dims() == 1, errors::InvalidArgument("A should have the shape (N)"));
-    int64 N = A_t.dim_size(0);
-    const auto A = c_vector_t(A_t.template flat<T>().data(), N);
+    typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> s_matrix_t;
 
     const Tensor& U_t = context->input(1);
-    OP_REQUIRES(context, ((U_t.dims() == 2) &&
-                          (U_t.dim_size(0) == N)),
+    OP_REQUIRES(context, (U_t.dims() == 2),
           errors::InvalidArgument("U should have the shape (N, J)"));
-    int64 J = U_t.dim_size(1);
-    const auto U = c_matrix_t(U_t.template flat<T>().data(), N, J);
+    int64 N = U_t.dim_size(0),
+          J = U_t.dim_size(1);
+
+    const Tensor& a_t = context->input(0);
+    OP_REQUIRES(context, ((a_t.dims() == 1) &&
+                          (a_t.dim_size(0) == N)),
+        errors::InvalidArgument("a should have the shape (N)"));
 
     const Tensor& V_t = context->input(2);
     OP_REQUIRES(context, ((V_t.dims() == 2) &&
                           (V_t.dim_size(0) == N) &&
                           (V_t.dim_size(1) == J)),
         errors::InvalidArgument("V should have the shape (N, J)"));
-    const auto V = c_matrix_t(V_t.template flat<T>().data(), N, J);
 
     const Tensor& P_t = context->input(3);
     OP_REQUIRES(context, ((P_t.dims() == 2) &&
                           (P_t.dim_size(0) == N-1) &&
                           (P_t.dim_size(1) == J)),
         errors::InvalidArgument("P should have the shape (N-1, J)"));
+
+    const auto U = c_matrix_t(U_t.template flat<T>().data(), N, J);
+    const auto a = c_vector_t(a_t.template flat<T>().data(), N);
+    const auto V = c_matrix_t(V_t.template flat<T>().data(), N, J);
     const auto P = c_matrix_t(P_t.template flat<T>().data(), N-1, J);
 
     // Create the outputs
-    Tensor* D_t = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &D_t));
-    auto D = vector_t(D_t->template flat<T>().data(), N);
-
+    Tensor* d_t = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &d_t));
     Tensor* W_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({N, J}), &W_t));
-    auto W = matrix_t(W_t->template flat<T>().data(), N, J);
-
     Tensor* S_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({J, J}), &S_t));
-    auto S = matrix_t(S_t->template flat<T>().data(), J, J);
 
-    D = A;
+    auto d = vector_t(d_t->template flat<T>().data(), N);
+    auto W = matrix_t(W_t->template flat<T>().data(), N, J);
+    auto S = s_matrix_t(S_t->template flat<T>().data(), J, J);
+
+    d = a;
     W = V;
-
-    int flag = celerite::factor(U, P, D, W, S);
+    int flag = celerite::factor(U, P, d, W, S);
     OP_REQUIRES(context, flag == 0, errors::InvalidArgument(kErrMsg));
   }
 };
 
 #define REGISTER_KERNEL(type)                                              \
   REGISTER_KERNEL_BUILDER(                                                 \
-      Name("CeleriteFactor").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
+      Name("CeleriteFactor")                                               \
+      .Device(DEVICE_CPU)                                                  \
+      .TypeConstraint<type>("T"),                                          \
       CeleriteFactorOp<type>)
 
 REGISTER_KERNEL(float);
