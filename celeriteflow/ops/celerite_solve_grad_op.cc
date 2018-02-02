@@ -135,7 +135,6 @@ class CeleriteSolveGradOp : public OpKernel {
     const auto bF = c_matrix_t(bF_t.template flat<T>().data(), J, Nrhs);
     const auto bG = c_matrix_t(bG_t.template flat<T>().data(), J, Nrhs);
 
-
     // Create the outputs
     Tensor* bU_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N, J}), &bU_t));
