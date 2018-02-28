@@ -56,34 +56,39 @@ void factor_grad (
   Eigen::MatrixBase<T6>& ba,        // (N)
   Eigen::MatrixBase<T4>& bV         // (N, J)
 ) {
-  int N = U.rows(), J = U.cols();
+  int N = U.rows(), J = U.cols(), J2 = J*J;
 
   // Make local copies of the gradients that we need.
   typedef Eigen::Matrix<typename T1::Scalar, T1::ColsAtCompileTime, T1::ColsAtCompileTime, T1::IsRowMajor> S_t;
-  S_t bS = S_t::Zero(J, J);
+  S_t S_ = S_t::Zero(J, J), bS = S_t::Zero(J, J);
   Eigen::Matrix<typename T1::Scalar, T1::ColsAtCompileTime, 1> bSWT;
 
   // Pass through the data to compute all the S matrices
-  std::vector<S_t> S(N);
-  S[0].resize(J, J);
-  S[0].setZero();
+  const int Options = (T1::ColsAtCompileTime == Eigen::Dynamic) ? Eigen::Dynamic : T1::ColsAtCompileTime * T1::ColsAtCompileTime;
+  Eigen::Matrix<typename T1::Scalar, T1::RowsAtCompileTime, Options, T1::IsRowMajor> S(N, J2);
+  S.row(0).setZero();
   for (int n = 1; n < N; ++n) {
-    S[n].resize(J, J);
-    S[n].setZero();
-    S[n].noalias() = S[n-1] + d(n-1) * W.row(n-1).transpose() * W.row(n-1);
-    S[n].array() *= (P.row(n-1).transpose() * P.row(n-1)).array();
+    S_.noalias() += d(n-1) * W.row(n-1).transpose() * W.row(n-1);
+    S_.array() *= (P.row(n-1).transpose() * P.row(n-1)).array();
+    for (int j = 0; j < J; ++j)
+      for (int k = 0; k < J; ++k)
+        S(n, j*J+k) = S_(j, k);
   }
 
   bV.array().colwise() /= d.array();
   for (int n = N-1; n > 0; --n) {
+    for (int j = 0; j < J; ++j)
+      for (int k = 0; k < J; ++k)
+        S_(j, k) = S(n, j*J+k);
+
     // Step 6
     ba(n) -= W.row(n) * bV.row(n).transpose();
-    bU.row(n).noalias() = -(bV.row(n) + 2.0 * ba(n) * U.row(n)) * S[n];
+    bU.row(n).noalias() = -(bV.row(n) + 2.0 * ba(n) * U.row(n)) * S_;
     bS.noalias() -= U.row(n).transpose() * (bV.row(n) + ba(n) * U.row(n));
 
     // Step 4
-    S[n] *= P.row(n-1).asDiagonal().inverse();
-    bP.row(n-1).noalias() = (bS * S[n] + S[n].transpose() * bS).diagonal();
+    S_ *= P.row(n-1).asDiagonal().inverse();
+    bP.row(n-1).noalias() = (bS * S_ + S_.transpose() * bS).diagonal();
 
     // Step 3
     bS = P.row(n-1).asDiagonal() * bS * P.row(n-1).asDiagonal();
