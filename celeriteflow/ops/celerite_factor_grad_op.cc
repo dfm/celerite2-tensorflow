@@ -15,10 +15,8 @@ REGISTER_OP("CeleriteFactorGrad")
   .Input("p: T")
   .Input("d: T")
   .Input("w: T")
-  .Input("s: T")
   .Input("bd: T")
   .Input("bw: T")
-  .Input("bs: T")
   .Output("ba: T")
   .Output("bu: T")
   .Output("bv: T")
@@ -31,15 +29,12 @@ REGISTER_OP("CeleriteFactorGrad")
     TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &p));
     TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 1, &d));
     TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 2, &w));
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(4), 2, &s));
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(5), 1, &bd));
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(6), 2, &bw));
-    TF_RETURN_IF_ERROR(c->WithRank(c->input(7), 2, &bs));
+    TF_RETURN_IF_ERROR(c->WithRank(c->input(4), 1, &bd));
+    TF_RETURN_IF_ERROR(c->WithRank(c->input(5), 2, &bw));
 
     TF_RETURN_IF_ERROR(c->Merge(u, w, &u));
     TF_RETURN_IF_ERROR(c->Merge(u, bw, &u));
     TF_RETURN_IF_ERROR(c->Merge(d, bd, &d));
-    TF_RETURN_IF_ERROR(c->Merge(s, bs, &u));
 
     c->set_output(0, c->input(2));
     c->set_output(1, c->input(0));
@@ -81,36 +76,22 @@ class CeleriteFactorGradOp : public OpKernel {
                           (W_t.dim_size(1) == J)),
           errors::InvalidArgument("W should have shape (N, J)"));
 
-    const Tensor& S_t = context->input(4);
-    OP_REQUIRES(context, ((S_t.dims() == 2) &&
-                          (S_t.dim_size(0) == J) &&
-                          (S_t.dim_size(1) == J)),
-          errors::InvalidArgument("S should have shape (J, J)"));
-
-    const Tensor& bd_t = context->input(5);
+    const Tensor& bd_t = context->input(4);
     OP_REQUIRES(context, ((bd_t.dims() == 1) && (bd_t.dim_size(0) == N)),
         errors::InvalidArgument("bd should have shape (N)"));
 
-    const Tensor& bW_t = context->input(6);
+    const Tensor& bW_t = context->input(5);
     OP_REQUIRES(context, ((bW_t.dims() == 2) &&
                           (bW_t.dim_size(0) == N) &&
                           (bW_t.dim_size(1) == J)),
           errors::InvalidArgument("bW should have shape (N, J)"));
 
-    const Tensor& bS_t = context->input(7);
-    OP_REQUIRES(context, ((bS_t.dims() == 2) &&
-                          (bS_t.dim_size(0) == J) &&
-                          (bS_t.dim_size(1) == J)),
-          errors::InvalidArgument("bS should have shape (J, J)"));
-
     const auto U = c_matrix_t(U_t.template flat<T>().data(), N, J);
     const auto P = c_matrix_t(P_t.template flat<T>().data(), N-1, J);
     const auto d = c_vector_t(d_t.template flat<T>().data(), N);
     const auto W = c_matrix_t(W_t.template flat<T>().data(), N, J);
-    const auto S = c_matrix_t(S_t.template flat<T>().data(), J, J);
     const auto bd = c_vector_t(bd_t.template flat<T>().data(), N);
     const auto bW = c_matrix_t(bW_t.template flat<T>().data(), N, J);
-    const auto bS = c_matrix_t(bS_t.template flat<T>().data(), J, J);
 
     // Create the outputs
     Tensor* ba_t = NULL;
@@ -131,7 +112,7 @@ class CeleriteFactorGradOp : public OpKernel {
     bP.setZero();
     ba = bd;
     bV = bW;
-    celerite::factor_grad(U, P, d, W, S, bS, bU, bP, ba, bV);
+    celerite::factor_grad(U, P, d, W, bU, bP, ba, bV);
   }
 };
 

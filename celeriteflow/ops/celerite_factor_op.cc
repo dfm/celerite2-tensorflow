@@ -20,7 +20,6 @@ REGISTER_OP("CeleriteFactor")
   .Input("p: T")
   .Output("d: T")
   .Output("w: T")
-  .Output("s: T")
   .SetShapeFn([](shape_inference::InferenceContext* c) {
 
     shape_inference::ShapeHandle a, u, v, p, J;
@@ -31,13 +30,8 @@ REGISTER_OP("CeleriteFactor")
     TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 2, &p));
     TF_RETURN_IF_ERROR(c->Merge(u, v, &u));
 
-    // Compute the JxJ shape for S
-    TF_RETURN_IF_ERROR(c->Subshape(u, 1, &J));
-    TF_RETURN_IF_ERROR(c->Concatenate(J, J, &J));
-
     c->set_output(0, c->input(0));
     c->set_output(1, c->input(1));
-    c->set_output(2, J);
 
     return Status::OK();
   });
@@ -52,7 +46,6 @@ class CeleriteFactorOp : public OpKernel {
     typedef Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> c_matrix_t;
     typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, 1>> vector_t;
     typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> matrix_t;
-    typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> s_matrix_t;
 
     const Tensor& U_t = context->input(1);
     OP_REQUIRES(context, (U_t.dims() == 2),
@@ -87,16 +80,13 @@ class CeleriteFactorOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &d_t));
     Tensor* W_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({N, J}), &W_t));
-    Tensor* S_t = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({J, J}), &S_t));
 
     auto d = vector_t(d_t->template flat<T>().data(), N);
     auto W = matrix_t(W_t->template flat<T>().data(), N, J);
-    auto S = s_matrix_t(S_t->template flat<T>().data(), J, J);
 
     d = a;
     W = V;
-    int flag = celerite::factor(U, P, d, W, S);
+    int flag = celerite::factor(U, P, d, W);
     OP_REQUIRES(context, flag == 0, errors::InvalidArgument(kErrMsg));
   }
 };

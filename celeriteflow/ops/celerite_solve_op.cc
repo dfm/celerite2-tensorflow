@@ -17,8 +17,6 @@ REGISTER_OP("CeleriteSolve")
   .Input("w: T")
   .Input("y: T")
   .Output("z: T")
-  .Output("f: T")
-  .Output("g: T")
   .SetShapeFn([](shape_inference::InferenceContext* c) {
 
     shape_inference::ShapeHandle u, p, d, w, y, J, Nrhs;
@@ -35,8 +33,6 @@ REGISTER_OP("CeleriteSolve")
     TF_RETURN_IF_ERROR(c->Concatenate(J, Nrhs, &J));
 
     c->set_output(0, c->input(4));
-    c->set_output(1, J);
-    c->set_output(2, J);
 
     return Status::OK();
   });
@@ -88,17 +84,11 @@ class CeleriteSolveOp : public OpKernel {
     // Create the outputs
     Tensor* Z_t = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N, Nrhs}), &Z_t));
-    Tensor* F_t = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({J, Nrhs}), &F_t));
-    Tensor* G_t = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({J, Nrhs}), &G_t));
 
     auto Z = matrix_t(Z_t->template flat<T>().data(), N, Nrhs);
-    auto F = matrix_t(F_t->template flat<T>().data(), J, Nrhs);
-    auto G = matrix_t(G_t->template flat<T>().data(), J, Nrhs);
 
     Z = Y;
-    celerite::solve(U, P, d, W, Z, F, G);
+    celerite::solve(U, P, d, W, Z);
   }
 };
 
