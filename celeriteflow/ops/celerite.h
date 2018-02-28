@@ -1,6 +1,12 @@
+#include <vector>
 #include <Eigen/Core>
+#include <unsupported/Eigen/CXX11/Tensor>
 
 namespace celerite {
+
+template <typename T> int sgn(T val) {
+  return (T(0) < val) - (val < T(0));
+}
 
 template <typename T1, typename T2, typename T3, typename T4, typename T5>
 int factor (
@@ -9,10 +15,12 @@ int factor (
   Eigen::MatrixBase<T3>& d,        // (N);    initially set to A
   Eigen::MatrixBase<T4>& W,        // (N, J); initially set to V
   Eigen::MatrixBase<T5>& S         // (J, J)
+  //Eigen::TensorBase<T5, Eigen::WriteAccessors>& S         // (N-1, J, J)
 ) {
   int N = U.rows(), J = U.cols();
 
   Eigen::Matrix<typename T4::Scalar, 1, T4::ColsAtCompileTime> tmp(1, J);
+  //Eigen::Matrix<typename T5::Scalar, T5::ColsAtCompileTime, T5::ColsAtCompileTime> S_(J, J);
 
   // First row
   S.setZero();
@@ -23,6 +31,7 @@ int factor (
     // Update S = diag(P) * (S + d*W*W.T) * diag(P)
     S.noalias() += d(n-1) * W.row(n-1).transpose() * W.row(n-1);
     S.array() *= (P.row(n-1).transpose() * P.row(n-1)).array();
+    //S.chip(0, n-1) = S_;
 
     // Update d = a - U * S * U.T
     tmp = U.row(n) * S;
@@ -53,34 +62,45 @@ void factor_grad (
   Eigen::MatrixBase<T5>& bV         // (N, J)
 ) {
   int N = U.rows();
+  int J = S.rows();
 
   // Make local copies of the gradients that we need.
-  Eigen::Matrix<typename T4::Scalar, T4::RowsAtCompileTime, T4::ColsAtCompileTime, T4::IsRowMajor> bS_ = bS, S_ = S;
+  typedef Eigen::Matrix<typename T4::Scalar, T4::RowsAtCompileTime, T4::ColsAtCompileTime, T4::IsRowMajor> S_t;
+  S_t bS_ = bS;
   Eigen::Matrix<typename T1::Scalar, T1::ColsAtCompileTime, 1> bSWT;
+  Eigen::Matrix<typename T1::Scalar, T1::ColsAtCompileTime, T1::ColsAtCompileTime> bSWT;
 
   bV.array().colwise() /= d.array();
+
+  std::vector<S_t> S_(N);
+  S_[0].resize(J, J);
+  S_[0].setZero();
+
+  for (int n = 1; n < N; ++n) {
+    S_[n].resize(J, J);
+    S_[n].setZero();
+    S_[n].noalias() = S_[n-1] + d(n-1) * W.row(n-1).transpose() * W.row(n-1);
+    S_[n].array() *= (P.row(n-1).transpose() * P.row(n-1)).array();
+  }
 
   for (int n = N-1; n > 0; --n) {
     // Step 6
     ba(n) -= W.row(n) * bV.row(n).transpose();
-    bU.row(n).noalias() -= (bV.row(n) + 2.0 * ba.row(n) * U.row(n)) * S_;
+    bU.row(n).noalias() = -(bV.row(n) + 2.0 * ba(n) * U.row(n)) * S_[n];
     bS_.noalias() -= U.row(n).transpose() * (bV.row(n) + ba(n) * U.row(n));
 
     // Step 4
-    S_ *= P.row(n-1).asDiagonal().inverse();
-    bP.row(n-1).noalias() += (bS_ * S_ + S_.transpose() * bS_).diagonal();
+    S_[n] *= P.row(n-1).asDiagonal().inverse();
+    bP.row(n-1).noalias() = (bS_ * S_[n] + S_[n].transpose() * bS_).diagonal();
 
     // Step 3
     bS_ = P.row(n-1).asDiagonal() * bS_ * P.row(n-1).asDiagonal();
     bSWT = bS_ * W.row(n-1).transpose();
     ba(n-1) += W.row(n-1) * bSWT;
     bV.row(n-1).noalias() += W.row(n-1) * (bS_ + bS_.transpose());
-
-    // Downdate S
-    S_ = P.row(n-1).asDiagonal().inverse() * S_;
-    S_.noalias() -= d(n-1) * W.row(n-1).transpose() * W.row(n-1);
   }
 
+  bU.row(0).setZero();
   ba(0) -= bV.row(0) * W.row(0).transpose();
 }
 
