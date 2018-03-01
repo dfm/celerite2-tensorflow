@@ -2,6 +2,7 @@
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/platform/default/logging.h"
 #include "tensorflow/core/framework/shape_inference.h"
+#include "tensorflow/core/framework/tensor_types.h"
 
 #include <Eigen/Core>
 
@@ -20,9 +21,11 @@ REGISTER_OP("CeleriteFactor")
   .Input("p: T")
   .Output("d: T")
   .Output("w: T")
+  .Output("s: T")
   .SetShapeFn([](shape_inference::InferenceContext* c) {
 
-    shape_inference::ShapeHandle a, u, v, p, J;
+    shape_inference::DimensionHandle J;
+    shape_inference::ShapeHandle a, u, v, p;
 
     TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &a));
     TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &u));
@@ -30,8 +33,13 @@ REGISTER_OP("CeleriteFactor")
     TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 2, &p));
     TF_RETURN_IF_ERROR(c->Merge(u, v, &u));
 
+    J = c->Dim(u, 1);
+    TF_RETURN_IF_ERROR(c->Multiply(J, J, &J));
+    TF_RETURN_IF_ERROR(c->ReplaceDim(u, 1, J, &u));
+
     c->set_output(0, c->input(0));
     c->set_output(1, c->input(1));
+    c->set_output(2, u);
 
     return Status::OK();
   });
@@ -47,27 +55,22 @@ class CeleriteFactorOp : public OpKernel {
     typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, 1>> vector_t;
     typedef Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> matrix_t;
 
+    const Tensor& a_t = context->input(0);
     const Tensor& U_t = context->input(1);
+    const Tensor& V_t = context->input(2);
+    const Tensor& P_t = context->input(3);
+
     OP_REQUIRES(context, (U_t.dims() == 2),
           errors::InvalidArgument("U should have the shape (N, J)"));
+
     int64 N = U_t.dim_size(0),
           J = U_t.dim_size(1);
 
-    const Tensor& a_t = context->input(0);
-    OP_REQUIRES(context, ((a_t.dims() == 1) &&
-                          (a_t.dim_size(0) == N)),
+    OP_REQUIRES(context, ((a_t.dims() == 1) && (a_t.dim_size(0) == N)),
         errors::InvalidArgument("a should have the shape (N)"));
-
-    const Tensor& V_t = context->input(2);
-    OP_REQUIRES(context, ((V_t.dims() == 2) &&
-                          (V_t.dim_size(0) == N) &&
-                          (V_t.dim_size(1) == J)),
+    OP_REQUIRES(context, ((V_t.dims() == 2) && (V_t.dim_size(0) == N) && (V_t.dim_size(1) == J)),
         errors::InvalidArgument("V should have the shape (N, J)"));
-
-    const Tensor& P_t = context->input(3);
-    OP_REQUIRES(context, ((P_t.dims() == 2) &&
-                          (P_t.dim_size(0) == N-1) &&
-                          (P_t.dim_size(1) == J)),
+    OP_REQUIRES(context, ((P_t.dims() == 2) && (P_t.dim_size(0) == N-1) && (P_t.dim_size(1) == J)),
         errors::InvalidArgument("P should have the shape (N-1, J)"));
 
     const auto U = c_matrix_t(U_t.template flat<T>().data(), N, J);
@@ -77,16 +80,20 @@ class CeleriteFactorOp : public OpKernel {
 
     // Create the outputs
     Tensor* d_t = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &d_t));
     Tensor* W_t = NULL;
+    Tensor* S_t = NULL;
+
+    OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &d_t));
     OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({N, J}), &W_t));
+    OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({N, J*J}), &S_t));
 
     auto d = vector_t(d_t->template flat<T>().data(), N);
     auto W = matrix_t(W_t->template flat<T>().data(), N, J);
+    auto S = matrix_t(S_t->template flat<T>().data(), N, J*J);
 
     d = a;
     W = V;
-    int flag = celerite::factor(U, P, d, W);
+    int flag = celerite::factor(U, P, d, W, S);
     OP_REQUIRES(context, flag == 0, errors::InvalidArgument(kErrMsg));
   }
 };
