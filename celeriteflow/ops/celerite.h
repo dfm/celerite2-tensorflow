@@ -1,11 +1,61 @@
-#include <vector>
 #include <Eigen/Core>
-#include <unsupported/Eigen/CXX11/Tensor>
 
 namespace celerite {
 
 template <typename T> int sgn(T val) {
   return (T(0) < val) - (val < T(0));
+}
+
+template <typename T1, typename T2, typename T3, typename T4>
+void to_dense (
+  const Eigen::MatrixBase<T1>& a,  // (N)
+  const Eigen::MatrixBase<T2>& U,  // (N, J)
+  const Eigen::MatrixBase<T2>& V,  // (N, J)
+  const Eigen::MatrixBase<T3>& P,  // (N-1, J)
+  Eigen::MatrixBase<T4>& K         // (N, N)
+) {
+  int N = U.rows(), J = U.cols();
+  Eigen::Matrix<typename T2::Scalar, 1, T2::ColsAtCompileTime> u, v;
+  Eigen::Matrix<typename T3::Scalar, T3::ColsAtCompileTime, 1> p(J);
+  for (int n = 0; n < N; ++n) {
+    v = V.row(n);
+    p.setConstant(1.0);
+    K(n, n) = a(n);
+    for (int m = n+1; m < N; ++m) {
+      p.array() *= P.row(m-1).array();
+      u = U.row(m);
+      K(n, m) = u * p.asDiagonal() * v.transpose();
+      K(m, n) = K(n, m);
+    }
+  }
+}
+
+template <typename T1, typename T2, typename T3, typename T4, typename T5, typename T6>
+void matmul (
+  const Eigen::MatrixBase<T1>& a,  // (N)
+  const Eigen::MatrixBase<T2>& U,  // (N, J)
+  const Eigen::MatrixBase<T2>& V,  // (N, J)
+  const Eigen::MatrixBase<T3>& P,  // (N-1, J)
+  const Eigen::MatrixBase<T4>& Z,  // (N, Nrhs)
+  Eigen::MatrixBase<T5>& Y,        // (N, Nrhs)
+  Eigen::MatrixBase<T6>& F_plus,   // (J, Nrhs)
+  Eigen::MatrixBase<T6>& F_minus   // (J, Nrhs)
+) {
+  int N = U.rows();
+
+  Y.row(N-1) = a(N-1) * Z.row(N-1);
+
+  F_plus.setZero();
+  for (int n = N-2; n >= 0; --n) {
+    F_plus = P.row(n).asDiagonal() * (F_plus + U.row(n+1).transpose() * Z.row(n+1));
+    Y.row(n) = a(n) * Z.row(n) + V.row(n) * F_plus;
+  }
+
+  F_minus.setZero();
+  for (int n = 1; n < N; ++n) {
+    F_minus = P.row(n-1).asDiagonal() * (F_minus + V.row(n-1).transpose() * Z.row(n-1));
+    Y.row(n) += U.row(n) * F_minus;
+  }
 }
 
 template <typename T1, typename T2, typename T3, typename T4, typename T5>
