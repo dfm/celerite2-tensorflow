@@ -26,7 +26,7 @@ ext = Extension(
         fmt_filename("celerite_solve_op.cc"),
         fmt_filename("celerite_solve_grad_op.cc"),
         fmt_filename("celerite_to_dense_op.cc"),
-        fmt_filename("celerite_matmul_op.cc"),
+        fmt_filename("celerite_mat_mul_op.cc"),
     ],
     language="c++",
     extra_compile_args=compile_flags,

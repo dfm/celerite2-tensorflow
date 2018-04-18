@@ -19,7 +19,7 @@ def to_dense(*args, **kwargs):
 
 
 def matmul(*args, **kwargs):
-    return mod.celerite_matmul(*args, **kwargs)
+    return mod.celerite_mat_mul(*args, **kwargs)
 
 
 def factor(*args, **kwargs):

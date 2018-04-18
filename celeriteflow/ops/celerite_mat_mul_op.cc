@@ -9,7 +9,7 @@
 
 using namespace tensorflow;
 
-REGISTER_OP("CeleriteMatmul")
+REGISTER_OP("CeleriteMatMul")
   .Attr("T: {float, double}")
   .Input("a: T")
   .Input("u: T")
@@ -35,9 +35,9 @@ REGISTER_OP("CeleriteMatmul")
   });
 
 template <typename T>
-class CeleriteMatmulOp : public OpKernel {
+class CeleriteMatMulOp : public OpKernel {
  public:
-  explicit CeleriteMatmulOp(OpKernelConstruction* context) : OpKernel(context) {}
+  explicit CeleriteMatMulOp(OpKernelConstruction* context) : OpKernel(context) {}
 
   void Compute(OpKernelContext* context) override {
     typedef Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, 1>> c_vector_t;
@@ -80,14 +80,14 @@ class CeleriteMatmulOp : public OpKernel {
     auto Y = matrix_t(Y_t->template flat<T>().data(), N, Nrhs);
     Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> F_plus(J, Nrhs), F_minus(J, Nrhs);
 
-    celerite::matmul(a, U, V, P, Z, Y, F_plus, F_minus);
+    celerite::MatMul(a, U, V, P, Z, Y, F_plus, F_minus);
   }
 };
 
 #define REGISTER_KERNEL(type)                                              \
   REGISTER_KERNEL_BUILDER(                                                 \
-      Name("CeleriteMatmul").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
-      CeleriteMatmulOp<type>)
+      Name("CeleriteMatMul").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
+      CeleriteMatMulOp<type>)
 
 REGISTER_KERNEL(float);
 REGISTER_KERNEL(double);
