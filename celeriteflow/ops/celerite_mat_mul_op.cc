@@ -80,7 +80,7 @@ class CeleriteMatMulOp : public OpKernel {
     auto Y = matrix_t(Y_t->template flat<T>().data(), N, Nrhs);
     Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> F_plus(J, Nrhs), F_minus(J, Nrhs);
 
-    celerite::MatMul(a, U, V, P, Z, Y, F_plus, F_minus);
+    celerite::matmul(a, U, V, P, Z, Y, F_plus, F_minus);
   }
 };
 
