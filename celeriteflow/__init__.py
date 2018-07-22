@@ -9,7 +9,10 @@ except NameError:
     __CELERITEFLOW_SETUP__ = False
 
 if not __CELERITEFLOW_SETUP__:
-    __all__ = ["CeleriteFlowMatrix", "to_dense", "get_matrices", "factor", "solve"]
+    __all__ = ["terms",
+               "to_dense", "factor", "solve", "matmul",
+               "GaussianProcess", "Solver", "get_matrices", ]
 
-    from .celeriteflow import CeleriteFlowMatrix
-    from .ops import to_dense, get_matrices, factor, solve
+    from . import terms
+    from .ops import to_dense, factor, solve, matmul
+    from .celeriteflow import GaussianProcess, Solver, get_matrices

@@ -2,56 +2,36 @@
 
 import os
 import sys
+import glob
 
 from setuptools import setup, Extension
-
-import tensorflow as tf
 
 # Publish the library to PyPI.
 if "publish" in sys.argv[-1]:
     os.system("python setup.py sdist upload")
     sys.exit()
 
-compile_flags = tf.sysconfig.get_compile_flags()
-compile_flags += ["-std=c++11", "-stdlib=libc++", "-O2",
-                  "-undefined dynamic_lookup"]
-link_flags = tf.sysconfig.get_link_flags()
+import tensorflow as tf  # NOQA
 
-fmt_filename = lambda fn: os.path.join("celeriteflow", "ops", fn)  # NOQA
-ext = Extension(
-    "celeriteflow.ops.celerite_op",
-    sources=[
-        fmt_filename("celerite_factor_op.cc"),
-        fmt_filename("celerite_factor_grad_op.cc"),
-        fmt_filename("celerite_solve_op.cc"),
-        fmt_filename("celerite_solve_grad_op.cc"),
-        fmt_filename("celerite_to_dense_op.cc"),
-        fmt_filename("celerite_mat_mul_op.cc"),
-    ],
-    language="c++",
-    extra_compile_args=compile_flags,
-    extra_link_args=link_flags,
-)
+sys.path.append("celeriteflow")
 
-# Includes
-# include_dirs = [tf.sysconfig.get_include()]
-# include_dirs.append(os.path.join(
-#     include_dirs[0], "external/nsync/public"))
-# include_dirs.append(os.path.join("celeriteflow", "ops"))
-# ext.include_dirs = include_dirs + ext.include_dirs
+from cpp_extension import BuildExtension, CppExtension  # NOQA
 
-# # Library
-# ext.library_dirs += [tf.sysconfig.get_lib()]
-# ext.libraries += ["m", "c++"]
 
-# Flags
+path = os.path.join("celeriteflow", "ops")
+cpp_files = glob.glob(os.path.join(path, "*.cc"))
+
+flags = ["-O2"]
 if sys.platform == "darwin":
-    ext.extra_compile_args += [
-        "-march=native", "-mmacosx-version-min=10.9"]
-    ext.extra_link_args += [
-        "-march=native", "-mmacosx-version-min=10.9"]
-else:
-    ext.libraries += ["stdc++"]
+    flags += ["-mmacosx-version-min=10.9"]
+
+extensions = [CppExtension(
+    "celeriteflow.celerite_op",
+    cpp_files,
+    include_dirs=[path],
+    extra_compile_args=flags,
+    extra_link_args=flags,
+)]
 
 # Hackishly inject a constant into builtins to enable importing of the
 # package before the library is built.
@@ -70,11 +50,12 @@ setup(
     url="https://github.com/dfm/celeriteflow",
     license="MIT",
     packages=["celeriteflow", "celeriteflow.ops"],
-    ext_modules=[ext],
+    ext_modules=extensions,
     description="",
     long_description=open("README.rst").read(),
     package_data={"": ["README.rst", "LICENSE"]},
     include_package_data=True,
+    cmdclass={"build_ext": BuildExtension},
     install_requires=["tensorflow"],
     # classifiers=[
     #     "Development Status :: 5 - Production/Stable",
