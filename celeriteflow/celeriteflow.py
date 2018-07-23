@@ -66,19 +66,13 @@ class Solver(object):
 
 class GaussianProcess(object):
 
-    def __init__(self, kernel, x, diag, name=None):
-        self.solver = Solver(kernel, x, diag, name=name)
-        self.constant = tf.cast(tf.size(x), x.dtype) \
-            * tf.constant(np.log(2*np.pi), dtype=x.dtype)
-
-    def log_likelihood(self, y, name=None):
-        with tf.name_scope(name, "log_likelihood"):
-            return -0.5 * (
+    def __init__(self, kernel, x, y, diag, name=None):
+        with tf.name_scope(name, "GaussianProcess"):
+            T = y.dtype
+            self.solver = Solver(kernel, x, diag, name=name)
+            self.alpha = self.solver.apply_inverse(y[:, None])
+            self.log_likelihood = -0.5 * (
                 tf.squeeze(
-                    tf.matmul(tf.transpose(y),
-                              self.solver.apply_inverse(y)))
-                + self.solver.log_determinant + self.constant)
-
-    def predict(self, y, name=None):
-        with tf.name_scope(name, "predict"):
-            alpha = self.solver.apply_inverse(y)
+                    tf.matmul(y[None, :], self.alpha))
+                + self.solver.log_determinant
+                + tf.cast(tf.size(x), T)*tf.constant(np.log(2*np.pi), dtype=T))

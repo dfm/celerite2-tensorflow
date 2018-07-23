@@ -10,6 +10,7 @@ import tensorflow as tf
 import celerite
 from celerite import terms
 
+import celeriteflow as cf
 from celeriteflow import ops
 
 
@@ -50,20 +51,20 @@ class TestFactor(tf.test.TestCase):
         y_t = tf.convert_to_tensor(y, dtype=dtype)
         diag_t = tf.convert_to_tensor(diag, dtype=dtype)
 
-        A, U, V, P = ops.get_celerite_matrices(
+        A, U, V, P = cf.get_matrices(
             a_real, c_real, a_comp, b_comp, c_comp, d_comp, x_t, diag_t)
-        D, W, S = ops.celerite_factor(A, U, V, P)
+        D, W = ops.factor(A, U, V, P)
 
         grads = [A, U, V, P]
         shapes = [tuple(map(int, g.shape)) for g in grads]
 
         log_det = tf.reduce_sum(tf.log(D))
-        alpha, f, g = ops.celerite_solve(U, P, D, W, y_t)
+        alpha = ops.solve(U, P, D, W, y_t)
         dotsolve = tf.matmul(alpha, alpha, transpose_a=True)
 
         with self.test_session() as session:
             A_r, U_r, V_r, P_r = session.run([A, U, V, P])
-            D_r, W_r, S_r = session.run([D, W, S])
+            D_r, W_r = session.run([D, W])
             log_det_r = session.run(log_det)
             alpha_r = session.run(alpha)
             inits = session.run(grads)
