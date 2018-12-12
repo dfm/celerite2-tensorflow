@@ -80,10 +80,12 @@ int factor (
   for (int n = 1; n < N; ++n) {
     // Update S = diag(P) * (S + d*W*W.T) * diag(P)
     S_.noalias() += d(n-1) * W.row(n-1).transpose() * W.row(n-1);
-    S_.array() *= (P.row(n-1).transpose() * P.row(n-1)).array();
+    S_ = P.row(n-1).asDiagonal() * S_;
+    //S_.array() *= (P.row(n-1).transpose() * P.row(n-1)).array();
     for (int j = 0; j < J; ++j)
       for (int k = 0; k < J; ++k)
         S(n, j*J+k) = S_(j, k);
+    S_ *= P.row(n-1).asDiagonal();
 
     // Update d = a - U * S * U.T
     tmp = U.row(n) * S_;
@@ -126,11 +128,10 @@ void factor_grad (
 
     // Step 6
     ba(n) -= W.row(n) * bV.row(n).transpose();
-    bU.row(n).noalias() = -(bV.row(n) + 2.0 * ba(n) * U.row(n)) * S_;
+    bU.row(n).noalias() = -(bV.row(n) + 2.0 * ba(n) * U.row(n)) * S_ * P.row(n-1).asDiagonal();
     bS.noalias() -= U.row(n).transpose() * (bV.row(n) + ba(n) * U.row(n));
 
     // Step 4
-    S_ *= P.row(n-1).asDiagonal().inverse();
     bP.row(n-1).noalias() = (bS * S_ + S_.transpose() * bS).diagonal();
 
     // Step 3
@@ -151,21 +152,21 @@ void solve (
   const Eigen::MatrixBase<T3>& d,  // (N)
   const Eigen::MatrixBase<T1>& W,  // (N, J)
   Eigen::MatrixBase<T4>& Z,        // (N, Nrhs); initially set to Y
-  Eigen::MatrixBase<T5>& F,        // (N, Nrhs); initially set to Y
+  Eigen::MatrixBase<T5>& F,        // (N, J*Nrhs)
   Eigen::MatrixBase<T5>& G         // (N, J*Nrhs)
 ) {
   int N = U.rows(), J = U.cols(), nrhs = Z.cols();
 
-  Eigen::Matrix<typename T1::Scalar, T1::RowsAtCompileTime, T4::ColsAtCompileTime, T1::IsRowMajor> F_(J, nrhs);
+  Eigen::Matrix<typename T1::Scalar, T1::ColsAtCompileTime, T4::ColsAtCompileTime> F_(J, nrhs);
   F_.setZero();
   F.row(0).setZero();
 
   for (int n = 1; n < N; ++n) {
     F_.noalias() += W.row(n-1).transpose() * Z.row(n-1);
-    F_ = P.row(n-1).asDiagonal() * F_;
     for (int j = 0; j < J; ++j)
       for (int k = 0; k < nrhs; ++k)
         F(n, j*nrhs+k) = F_(j, k);
+    F_ = P.row(n-1).asDiagonal() * F_;
     Z.row(n).noalias() -= U.row(n) * F_;
   }
 
@@ -175,10 +176,10 @@ void solve (
   G.row(N-1).setZero();
   for (int n = N-2; n >= 0; --n) {
     F_.noalias() += U.row(n+1).transpose() * Z.row(n+1);
-    F_ = P.row(n).asDiagonal() * F_;
     for (int j = 0; j < J; ++j)
       for (int k = 0; k < nrhs; ++k)
         G(n, j*nrhs+k) = F_(j, k);
+    F_ = P.row(n).asDiagonal() * F_;
     Z.row(n).noalias() -= W.row(n) * F_;
   }
 }
@@ -202,7 +203,7 @@ void solve_grad (
   int N = U.rows(), J = U.cols(), nrhs = Z.cols();
 
   Eigen::Matrix<typename T4::Scalar, T4::RowsAtCompileTime, T4::ColsAtCompileTime, T4::IsRowMajor> Z_ = Z;
-  typedef Eigen::Matrix<typename T1::Scalar, T1::RowsAtCompileTime, T4::ColsAtCompileTime, T1::IsRowMajor> F_t;
+  typedef Eigen::Matrix<typename T1::Scalar, T1::ColsAtCompileTime, Eigen::RowMajor> F_t;
   F_t F_(J, nrhs), bF = F_t::Zero(J, nrhs);
 
   bY = bZ;
@@ -212,14 +213,14 @@ void solve_grad (
         F_(j, k) = G(n, j*nrhs+k);
 
     // Grad of: Z.row(n).noalias() -= W.row(n) * G;
-    bW.row(n).noalias() -= bY.row(n) * F_.transpose();
+    bW.row(n).noalias() -= bY.row(n) * (P.row(n).asDiagonal() * F_).transpose();
     bF.noalias() -= W.row(n).transpose() * bY.row(n);
 
     // Inverse of: Z.row(n).noalias() -= W.row(n) * G;
-    Z_.row(n).noalias() += W.row(n) * F_;
+    Z_.row(n).noalias() += W.row(n) * (P.row(n).asDiagonal() * F_);
 
     // Grad of: g = P.row(n).asDiagonal() * G;
-    bP.row(n).noalias() += (bF * F_.transpose()).diagonal();
+    bP.row(n).noalias() += (F_ * bF.transpose()).diagonal();
     bF = P.row(n).asDiagonal() * bF;
 
     // Grad of: g.noalias() += U.row(n+1).transpose() * Z.row(n+1);
@@ -240,11 +241,11 @@ void solve_grad (
         F_(j, k) = F(n, j*nrhs+k);
 
     // Grad of: Z.row(n).noalias() -= U.row(n) * f;
-    bU.row(n).noalias() -= bY.row(n) * F_.transpose();
+    bU.row(n).noalias() -= bY.row(n) * (P.row(n-1).asDiagonal() * F_).transpose();
     bF.noalias() -= U.row(n).transpose() * bY.row(n);
 
     // Grad of: F = P.row(n-1).asDiagonal() * F;
-    bP.row(n-1).noalias() += (bF * F_.transpose()).diagonal();
+    bP.row(n-1).noalias() += (F_ * bF.transpose()).diagonal();
     bF = P.row(n-1).asDiagonal() * bF;
 
     // Grad of: F.noalias() += W.row(n-1).transpose() * Z.row(n-1);
