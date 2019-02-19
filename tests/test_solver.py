@@ -2,8 +2,6 @@
 
 from __future__ import division, print_function
 
-__all__ = []
-
 import numpy as np
 import tensorflow as tf
 
