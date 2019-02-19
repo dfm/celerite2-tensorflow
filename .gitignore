@@ -4,3 +4,4 @@ var
 .DS_Store
 __pycache__
 *.egg-info
+.pytest_cache

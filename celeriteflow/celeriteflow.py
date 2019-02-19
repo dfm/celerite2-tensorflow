@@ -12,29 +12,37 @@ from .ops import to_dense, factor, solve, matmul
 def get_matrices(a_real, c_real, a_comp, b_comp, c_comp, d_comp, x, diag,
                  name=None):
     with tf.name_scope(name, "get_matrices"):
+
         a = tf.add(diag, tf.reduce_sum(a_real) + tf.reduce_sum(a_comp),
                    name="a")
 
+        expand_left = lambda arg: tf.expand_dims(arg, 0)    # NOQA
+        expand_right = lambda arg: tf.expand_dims(arg, -1)  # NOQA
+
+        a_real = expand_left(a_real)
+        c_real = expand_left(c_real)
+        a_comp = expand_left(a_comp)
+        b_comp = expand_left(b_comp)
+        c_comp = expand_left(c_comp)
+        d_comp = expand_left(d_comp)
+        x = expand_right(x)
+
         U = tf.concat((
-            a_real[None, :] + tf.zeros_like(x)[:, None],
-            a_comp[None, :] * tf.cos(d_comp[None, :] * x[:, None])
-            + b_comp[None, :] * tf.sin(d_comp[None, :] * x[:, None]),
-            a_comp[None, :] * tf.sin(d_comp[None, :] * x[:, None])
-            - b_comp[None, :] * tf.cos(d_comp[None, :] * x[:, None]),
+            a_real + tf.zeros_like(x),
+            a_comp * tf.cos(d_comp * x) + b_comp * tf.sin(d_comp * x),
+            a_comp * tf.sin(d_comp * x) - b_comp * tf.cos(d_comp * x),
         ), axis=1, name="U")
 
         V = tf.concat((
-            tf.zeros_like(a_real)[None, :] + tf.ones_like(x)[:, None],
-            tf.cos(d_comp[None, :] * x[:, None]),
-            tf.sin(d_comp[None, :] * x[:, None]),
+            tf.zeros_like(a_real) + tf.ones_like(x),
+            tf.cos(d_comp * x),
+            tf.sin(d_comp * x),
         ), axis=1, name="V")
 
         dx = x[1:] - x[:-1]
-        P = tf.concat((
-            tf.exp(-c_real[None, :] * dx[:, None]),
-            tf.exp(-c_comp[None, :] * dx[:, None]),
-            tf.exp(-c_comp[None, :] * dx[:, None]),
-        ), axis=1, name="P")
+        arg_real = tf.exp(-c_real * dx)
+        arg_comp = tf.exp(-c_comp * dx)
+        P = tf.concat((arg_real, arg_comp, arg_comp), axis=1, name="P")
 
         return a, U, V, P
 
@@ -47,7 +55,10 @@ class Solver(object):
         self.x = x
         self.diag = diag
         with tf.name_scope(self.name, "Solver"):
-            self.a, self.U, self.V, self.P = self.get_matrices()
+            a_real, c_real, a_comp, b_comp, c_comp, d_comp = \
+                self.kernel.coefficients
+            self.a, self.U, self.V, self.P = get_matrices(
+                a_real, c_real, a_comp, b_comp, c_comp, d_comp, x, diag)
             self.d, self.W = factor(self.a, self.U, self.V, self.P,
                                     name="factor")
             self.log_determinant = tf.reduce_sum(tf.log(self.d),
@@ -62,16 +73,6 @@ class Solver(object):
     def matmul(self, z, **kwargs):
         with tf.name_scope(self.name, "Solver/matmul"):
             return matmul(self.a, self.U, self.V, self.P, z, **kwargs)
-
-    def get_matrices(self, name=None):
-        x = self.x
-        diag = self.diag
-        a_real, c_real, a_comp, b_comp, c_comp, d_comp = \
-            self.kernel.get_coefficients()
-        if name is None:
-            name = "Solver/get_matrices"
-        return get_matrices(a_real, c_real, a_comp, b_comp, c_comp, d_comp,
-                            x, diag, name=name)
 
 
 class GaussianProcess(object):

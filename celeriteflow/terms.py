@@ -10,6 +10,7 @@ __all__ = [
 import numpy as np
 import tensorflow as tf
 from itertools import chain
+from functools import partial
 
 
 class Term(object):
@@ -187,34 +188,52 @@ class SHOTerm(Term):
 
     parameter_names = ("S0", "w0", "Q")
 
+    def __init__(self, *args, **kwargs):
+        super(SHOTerm, self).__init__(*args, **kwargs)
+
     def get_coefficients(self):
         with tf.name_scope(self.name):
-            def true_fn():
-                f = tf.sqrt(4.0*tf.square(self.Q) - 1.0)
-                a = self.S0 * self.w0 * self.Q
-                c = 0.5 * self.w0 / self.Q
+            def overdamped():
+                Q = self.Q
+                f = tf.sqrt(tf.clip_by_value(4.0*Q**2 - 1.0, 1e-12, np.inf))
+                a = self.S0 * self.w0 * Q
+                c = 0.5 * self.w0 / Q
+                a_size = tf.size(a)
+                c_size = tf.size(c)
                 return (
-                    tf.constant([], dtype=self.dtype),
-                    tf.constant([], dtype=self.dtype),
-                    tf.expand_dims(a, 0),
-                    tf.expand_dims(a / f, 0),
-                    tf.expand_dims(c, 0),
-                    tf.expand_dims(c * f, 0),
+                    tf.zeros(0, dtype=self.dtype),
+                    tf.zeros(0, dtype=self.dtype),
+                    tf.reshape(a, (a_size,)),
+                    tf.reshape(a / f, (a_size,)),
+                    tf.reshape(c, (c_size,)),
+                    tf.reshape(c * f, (c_size,)),
                 )
 
-            def false_fn():
-                f = tf.sqrt(1.0 - 4.0*tf.square(self.Q))
+            def underdamped():
+                Q = self.Q
+                f = tf.sqrt(tf.clip_by_value(1.0 - 4.0*Q**2, 1e-12, np.inf))
                 return (
-                    0.5*self.S0*self.w0*self.Q*tf.stack([1.0+1.0/f,
-                                                         1.0-1.0/f]),
-                    0.5*self.w0/self.Q*tf.stack([1.0-f, 1.0+f]),
-                    tf.constant([], dtype=self.dtype),
-                    tf.constant([], dtype=self.dtype),
-                    tf.constant([], dtype=self.dtype),
-                    tf.constant([], dtype=self.dtype),
+                    0.5*self.S0*self.w0*Q*tf.stack([1.0+1.0/f, 1.0-1.0/f]),
+                    0.5*self.w0/Q*tf.stack([1.0-f, 1.0+f]),
+                    tf.zeros(0, dtype=self.dtype),
+                    tf.zeros(0, dtype=self.dtype),
+                    tf.zeros(0, dtype=self.dtype),
+                    tf.zeros(0, dtype=self.dtype),
                 )
 
-            return tf.cond(self.Q >= 0.5, true_fn, false_fn)
+            over = overdamped()
+            under = underdamped()
+
+            def true_fn(i):
+                return under[i]
+
+            def false_fn(i):
+                return over[i]
+
+            m = self.Q < 0.5
+            return [
+                tf.cond(m, partial(true_fn, i), partial(false_fn, i))
+                for i in range(6)]
 
 
 class Matern32Term(Term):
