@@ -9,7 +9,7 @@ __all__ = [
 
 import numpy as np
 import tensorflow as tf
-from itertools import chain, product
+from itertools import chain
 
 
 class Term(object):
@@ -27,6 +27,7 @@ class Term(object):
                 value = kwargs[name] if name in kwargs \
                     else tf.exp(kwargs["log_" + name], name=name)
                 setattr(self, name, tf.cast(value, self.dtype))
+        self.coefficients = self.get_coefficients()
 
     def __add__(self, b):
         return TermSum(self, b)
@@ -67,7 +68,7 @@ class TermSum(Term):
     def get_coefficients(self):
         coeffs = []
         for t in self.terms:
-            coeffs.append(t.get_coefficients())
+            coeffs.append(t.coefficients)
         with tf.name_scope(self.name):
             return [tf.concat(a, 0) for a in zip(*coeffs)]
 
@@ -80,47 +81,60 @@ class TermProduct(Term):
         super(TermProduct, self).__init__(**kwargs)
 
     def get_coefficients(self):
-        c1 = self.term1.get_coefficients()
-        c2 = self.term2.get_coefficients()
-
-        # First compute real terms
-        ar = []
-        cr = []
-        gen = product(zip(c1[0], c1[1]), zip(c2[0], c2[1]))
-        for i, ((aj, cj), (ak, ck)) in enumerate(gen):
-            ar.append(aj * ak)
-            cr.append(cj + ck)
-
-        # Then the complex terms
-        ac = []
-        bc = []
-        cc = []
-        dc = []
-
-        # real * complex
-        gen = product(zip(c1[0], c1[1]), zip(*(c2[2:])))
-        gen = chain(gen, product(zip(c2[0], c2[1]), zip(*(c1[2:]))))
-        for i, ((aj, cj), (ak, bk, ck, dk)) in enumerate(gen):
-            ac.append(aj * ak)
-            bc.append(aj * bk)
-            cc.append(cj + ck)
-            dc.append(dk)
-
-        # complex * complex
-        gen = product(zip(*(c1[2:])), zip(*(c2[2:])))
-        for i, ((aj, bj, cj, dj), (ak, bk, ck, dk)) in enumerate(gen):
-            ac.append(0.5 * (aj * ak + bj * bk))
-            bc.append(0.5 * (bj * ak - aj * bk))
-            cc.append(cj + ck)
-            dc.append(dj - dk)
-
-            ac.append(0.5 * (aj * ak - bj * bk))
-            bc.append(0.5 * (bj * ak + aj * bk))
-            cc.append(cj + ck)
-            dc.append(dj + dk)
-
         with tf.name_scope(self.name):
-            return list(map(tf.stack, (ar, cr, ac, bc, cc, dc)))
+            c1 = self.term1.coefficients
+            c2 = self.term2.coefficients
+
+            # First compute real terms
+            ar = []
+            cr = []
+            ar.append(tf.reshape(c1[0][:, None] * c2[0][None, :], [-1]))
+            cr.append(tf.reshape(c1[1][:, None] * c2[1][None, :], [-1]))
+
+            # Then the complex terms
+            ac = []
+            bc = []
+            cc = []
+            dc = []
+
+            # real * complex
+            ac.append(tf.reshape(c1[0][:, None] * c2[2][None, :], [-1]))
+            bc.append(tf.reshape(c1[0][:, None] * c2[3][None, :], [-1]))
+            cc.append(tf.reshape(c1[1][:, None] + c2[4][None, :], [-1]))
+            dc.append(tf.reshape(tf.zeros_like(c1[1])[:, None]
+                                 + c2[5][None, :],
+                                 [-1]))
+
+            ac.append(tf.reshape(c2[0][:, None] * c1[2][None, :], [-1]))
+            bc.append(tf.reshape(c2[0][:, None] * c1[3][None, :], [-1]))
+            cc.append(tf.reshape(c2[1][:, None] + c1[4][None, :], [-1]))
+            dc.append(tf.reshape(tf.zeros_like(c2[1])[:, None]
+                                 + c1[5][None, :],
+                                 [-1]))
+
+            # complex * complex
+            aj, bj, cj, dj = c1[2:]
+            ak, bk, ck, dk = c2[2:]
+
+            ac.append(tf.reshape(
+                0.5*(aj[:, None]*ak[None, :] + bj[:, None]*bk[None, :]), [-1]))
+            bc.append(tf.reshape(
+                0.5*(bj[:, None]*ak[None, :] - aj[:, None]*bk[None, :]), [-1]))
+            cc.append(tf.reshape(cj[:, None] + ck[None, :], [-1]))
+            dc.append(tf.reshape(dj[:, None] - dk[None, :], [-1]))
+
+            ac.append(tf.reshape(
+                0.5*(aj[:, None]*ak[None, :] - bj[:, None]*bk[None, :]), [-1]))
+            bc.append(tf.reshape(
+                0.5*(bj[:, None]*ak[None, :] + aj[:, None]*bk[None, :]), [-1]))
+            cc.append(tf.reshape(cj[:, None] + ck[None, :], [-1]))
+            dc.append(tf.reshape(dj[:, None] + dk[None, :], [-1]))
+
+            return [
+                tf.concat(vals, axis=0) if len(vals)
+                else tf.zeros(0, dtype=self.dtype)
+                for vals in (ar, cr, ac, bc, cc, dc)
+            ]
 
 
 class TermDiff(Term):
@@ -208,11 +222,13 @@ class Matern32Term(Term):
     parameter_names = ("sigma", "rho")
 
     def __init__(self, **kwargs):
+        dtype = kwargs.get("dtype", tf.float64)
+        name = kwargs.get("name", self.__class__.__name__)
         eps = kwargs.pop("eps", None)
+        with tf.name_scope(name):
+            self.eps = tf.cast(eps, dtype) if eps is not None \
+                else tf.constant(0.01, dtype=dtype, name="eps")
         super(Matern32Term, self).__init__(**kwargs)
-        with tf.name_scope(self.name):
-            self.eps = tf.cast(eps, self.dtype) if eps is not None \
-                else tf.constant(0.01, dtype=self.dtype, name="eps")
 
     def get_complex_coefficients(self):
         with tf.name_scope(self.name):
