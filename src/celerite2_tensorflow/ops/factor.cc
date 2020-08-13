@@ -110,7 +110,7 @@ class CeleriteFactorOp : public OpKernel {
 
     OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({N}), &d_t));
     OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({N, J}), &W_t));
-    OP_REQUIRES_OK(context, context->allocate_output(3, TensorShape({N, J, J}), &S_t));
+    OP_REQUIRES_OK(context, context->allocate_output(2, TensorShape({N, J, J}), &S_t));
 
     auto d = vector_t(d_t->template flat<T>().data(), N);
     auto W = matrix_t(W_t->template flat<T>().data(), N, J);
@@ -148,20 +148,16 @@ class CeleriteFactorRevOp : public OpKernel {
     OP_REQUIRES(context, ((a_t.dims() == 1) && (a_t.dim_size(0) == N)), errors::InvalidArgument("a should have shape (N)"));
     OP_REQUIRES(context, ((V_t.dims() == 2) && (V_t.dim_size(0) == N) && (V_t.dim_size(1) == J)),
                 errors::InvalidArgument("V should have shape (N, J)"));
-
     OP_REQUIRES(context, ((P_t.dims() == 2) && (P_t.dim_size(0) == N - 1) && (P_t.dim_size(1) == J)),
                 errors::InvalidArgument("P should have shape (N-1, J)"));
 
     OP_REQUIRES(context, ((d_t.dims() == 1) && (d_t.dim_size(0) == N)), errors::InvalidArgument("d should have shape (N)"));
-
     OP_REQUIRES(context, ((W_t.dims() == 2) && (W_t.dim_size(0) == N) && (W_t.dim_size(1) == J)),
                 errors::InvalidArgument("W should have shape (N, J)"));
-
     OP_REQUIRES(context, ((S_t.dims() == 3) && (S_t.dim_size(0) == N) && (S_t.dim_size(1) == J) && (S_t.dim_size(2) == J)),
                 errors::InvalidArgument("S should have shape (N, J, J)"));
 
     OP_REQUIRES(context, ((bd_t.dims() == 1) && (bd_t.dim_size(0) == N)), errors::InvalidArgument("bd should have shape (N)"));
-
     OP_REQUIRES(context, ((bW_t.dims() == 2) && (bW_t.dim_size(0) == N) && (bW_t.dim_size(1) == J)),
                 errors::InvalidArgument("bW should have shape (N, J)"));
 

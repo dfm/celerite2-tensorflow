@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__all__ = []
+__all__ = ["factor"]
 
 import os
 import sysconfig
@@ -20,18 +20,18 @@ mod = tf.load_op_library(os.path.join(dirname, "op_impl" + suffix))
 #     return mod.celerite_mat_mul(*args, **kwargs)
 
 
-# def factor(*args, **kwargs):
-#     return mod.celerite_factor(*args, **kwargs)[:-1]
+def factor(*args, **kwargs):
+    return mod.celerite_factor(*args, **kwargs)[:-1]
 
 
 # def solve(*args, **kwargs):
 #     return mod.celerite_solve(*args, **kwargs)[0]
 
 
-# @tf.RegisterGradient("CeleriteFactor")
-# def _celerite_factor_grad(op, *grads):
-#     args = [op.inputs[1], op.inputs[3]] + list(op.outputs) + list(grads[:-1])
-#     return mod.celerite_factor_grad(*args)
+@tf.RegisterGradient("CeleriteFactor")
+def _celerite_factor_rev(op, *grads):
+    args = list(op.inputs) + list(op.outputs) + list(grads[:-1])
+    return mod.celerite_factor_rev(*args)
 
 
 # @tf.RegisterGradient("CeleriteSolve")
