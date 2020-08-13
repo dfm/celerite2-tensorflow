@@ -5,3 +5,6 @@ var
 __pycache__
 *.egg-info
 .pytest_cache
+.envrc
+*_version.py
+dist

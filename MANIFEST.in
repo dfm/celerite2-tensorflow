@@ -1,0 +1,8 @@
+include README.md LICENSE *.toml
+
+include src/celerite2_tensorflow/ops/*.cc
+
+exclude .*
+exclude celerite2
+
+graft celerite2/c++/include
